@@ -6,7 +6,8 @@ use ratatui::layout::Rect;
 use crate::{
     app::{
         state::{
-            AppState, ContextMenuKind, ContextMenuState, MenuListState, Mode, NavigatorStateFilter,
+            AppState, ContextMenuKind, ContextMenuState, MenuListState, Mode,
+            MoveTabToWorkspaceState, NavigatorStateFilter, SelectionListState,
         },
         App,
     },
@@ -448,6 +449,40 @@ pub(super) fn open_new_tab_dialog(state: &mut AppState) {
     state.mode = Mode::RenameTab;
 }
 
+pub(crate) fn move_tab_workspace_indices(
+    state: &AppState,
+    source_workspace_id: &str,
+) -> Vec<usize> {
+    state
+        .workspaces
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, workspace)| (workspace.id != source_workspace_id).then_some(idx))
+        .collect()
+}
+
+pub(crate) fn open_move_tab_to_workspace(state: &mut AppState, ws_idx: usize, tab_idx: usize) {
+    let Some(workspace) = state.workspaces.get(ws_idx) else {
+        return;
+    };
+    if workspace.tabs.len() <= 1 || state.workspaces.len() <= 1 {
+        leave_modal(state);
+        return;
+    }
+    let Some(tab) = workspace.tabs.get(tab_idx) else {
+        return;
+    };
+    let tab_id = crate::workspace::public_tab_id_for_number(&workspace.id, tab.number);
+    let source_workspace_id = workspace.id.clone();
+    state.move_tab_to_workspace = Some(MoveTabToWorkspaceState {
+        tab_id,
+        source_workspace_id,
+        list: SelectionListState::new(0),
+    });
+    state.context_menu = None;
+    state.mode = Mode::MoveTabToWorkspace;
+}
+
 pub(super) fn leave_modal(state: &mut AppState) {
     if state.active.is_some() {
         state.mode = Mode::Terminal;
@@ -831,6 +866,9 @@ pub(super) fn apply_context_menu_action(
             state.switch_tab(tab_idx);
             open_rename_active_tab(state, false);
         }
+        (ContextMenuKind::Tab { ws_idx, tab_idx }, Some("Move to workspace...")) => {
+            open_move_tab_to_workspace(state, ws_idx, tab_idx);
+        }
         (ContextMenuKind::Tab { ws_idx, tab_idx }, Some("Close")) => {
             state.selected = ws_idx;
             state.active = Some(ws_idx);
@@ -1194,6 +1232,54 @@ impl App {
         }
     }
 
+    pub(crate) fn handle_move_tab_to_workspace_key(&mut self, key: KeyEvent) {
+        let Some(picker) = self.state.move_tab_to_workspace.as_ref() else {
+            leave_modal(&mut self.state);
+            return;
+        };
+        let item_count = move_tab_workspace_indices(&self.state, &picker.source_workspace_id).len();
+        match key.code {
+            KeyCode::Esc => {
+                self.state.move_tab_to_workspace = None;
+                leave_modal(&mut self.state);
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(picker) = &mut self.state.move_tab_to_workspace {
+                    picker.list.move_prev();
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(picker) = &mut self.state.move_tab_to_workspace {
+                    picker.list.move_next(item_count);
+                }
+            }
+            KeyCode::Enter => self.move_tab_to_selected_workspace(),
+            _ => {}
+        }
+    }
+
+    pub(crate) fn move_tab_to_selected_workspace(&mut self) {
+        let Some(picker) = self.state.move_tab_to_workspace.take() else {
+            return;
+        };
+        let destinations = move_tab_workspace_indices(&self.state, &picker.source_workspace_id);
+        let Some(&destination_ws_idx) = destinations.get(picker.list.selected) else {
+            leave_modal(&mut self.state);
+            return;
+        };
+        let destination_workspace_id = self.public_workspace_id(destination_ws_idx);
+        let insert_index = self.state.workspaces[destination_ws_idx].tabs.len();
+        self.runtime_tab_move(
+            "tui.tab.move_workspace",
+            crate::api::schema::TabMoveParams {
+                tab_id: picker.tab_id,
+                workspace_id: Some(destination_workspace_id),
+                insert_index,
+            },
+        );
+        leave_modal(&mut self.state);
+    }
+
     pub(crate) fn apply_context_menu_action_via_api(&mut self, menu: ContextMenuState, idx: usize) {
         let item = menu.items().get(idx).copied();
         match (menu.kind, item) {
@@ -1258,6 +1344,9 @@ impl App {
                 self.focus_workspace_idx_via_api(ws_idx);
                 self.focus_tab_idx_via_api(tab_idx);
                 open_rename_active_tab(&mut self.state, false);
+            }
+            (ContextMenuKind::Tab { ws_idx, tab_idx }, Some("Move to workspace...")) => {
+                open_move_tab_to_workspace(&mut self.state, ws_idx, tab_idx);
             }
             (ContextMenuKind::Tab { ws_idx, tab_idx }, Some("Close")) => {
                 self.focus_workspace_idx_via_api(ws_idx);
@@ -2332,6 +2421,61 @@ mod tests {
         assert_eq!(app.state.selected, 0);
         assert_eq!(app.state.mode, Mode::ConfirmClose);
         assert_eq!(app.state.workspaces.len(), 2);
+    }
+
+    #[test]
+    fn tab_context_menu_opens_workspace_picker_for_selected_tab() {
+        let mut state = state_with_workspaces(&["source", "destination"]);
+        let moved_idx = state.workspaces[0].test_add_tab(Some("moved"));
+        let menu = ContextMenuState {
+            kind: ContextMenuKind::Tab {
+                ws_idx: 0,
+                tab_idx: moved_idx,
+            },
+            x: 0,
+            y: 0,
+            list: MenuListState::new(0),
+        };
+        let idx = menu
+            .items()
+            .iter()
+            .position(|item| *item == "Move to workspace...")
+            .expect("move workspace item");
+        let mut terminal_runtimes = crate::terminal::TerminalRuntimeRegistry::new();
+
+        apply_context_menu_action(&mut state, &mut terminal_runtimes, menu, idx);
+
+        assert_eq!(state.mode, Mode::MoveTabToWorkspace);
+        let picker = state
+            .move_tab_to_workspace
+            .as_ref()
+            .expect("workspace picker");
+        assert_eq!(picker.source_workspace_id, state.workspaces[0].id);
+        assert_eq!(
+            move_tab_workspace_indices(&state, &picker.source_workspace_id),
+            vec![1]
+        );
+    }
+
+    #[test]
+    fn workspace_picker_enter_moves_and_follows_tab() {
+        let mut app = app_with_test_workspaces(&["source", "destination"]);
+        let moved_idx = app.state.workspaces[0].test_add_tab(Some("moved"));
+        let moved_root = app.state.workspaces[0].tabs[moved_idx].root_pane;
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        app.state.ensure_test_terminals();
+        open_move_tab_to_workspace(&mut app.state, 0, moved_idx);
+
+        app.handle_move_tab_to_workspace_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
+
+        assert_eq!(app.state.workspaces[0].tabs.len(), 1);
+        assert_eq!(app.state.workspaces[1].tabs.len(), 2);
+        assert_eq!(app.state.workspaces[1].tabs[1].root_pane, moved_root);
+        assert_eq!(app.state.active, Some(1));
+        assert_eq!(app.state.mode, Mode::Terminal);
+        assert!(app.state.move_tab_to_workspace.is_none());
+        app.state.assert_invariants_for_test();
     }
 
     #[test]

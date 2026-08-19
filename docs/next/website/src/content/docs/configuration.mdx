@@ -134,6 +134,7 @@ goto = "prefix+g"
 new_tab = "prefix+c"
 next_tab = "prefix+n"
 previous_tab = "prefix+p"
+move_tab_to_workspace = "prefix+shift+m"
 focus_pane_left = "prefix+h"
 navigate_workspace_down = "j"
 navigate_pane_down = "ctrl+j"
@@ -149,7 +150,9 @@ A binding may also be an array when one action needs multiple shortcuts:
 next_tab = ["prefix+n", "ctrl+alt+]"]
 ```
 
-Optional actions are unset by default. Bind them with `prefix+` for prefix-mode behavior, or use an explicit modified chord when you intentionally want a direct shortcut. For example, tmux-style one-keystroke pane resizing without entering resize mode:
+Optional actions are unset by default. Bind them with `prefix+` for prefix-mode behavior, or use an explicit modified chord when you intentionally want a direct shortcut. This includes `move_tab_previous`, `move_tab_next`, and `move_tab_to_workspace`. The first two reorder the active tab. The last action opens the workspace picker.
+
+For example, tmux-style one-keystroke pane resizing without entering resize mode:
 
 ```toml
 [keys]

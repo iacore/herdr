@@ -111,6 +111,9 @@ impl App {
                 Mode::ContextMenu => {
                     self.handle_context_menu_key_via_api(key_event);
                 }
+                Mode::MoveTabToWorkspace => {
+                    self.handle_move_tab_to_workspace_key(key_event);
+                }
                 Mode::Settings => self.handle_settings_key(key_event),
                 Mode::GlobalMenu => handle_global_menu_key(&mut self.state, key_event),
                 Mode::KeybindHelp => handle_keybind_help_key(&mut self.state, key),
@@ -436,6 +439,21 @@ impl App {
                         source_tab_idx,
                         insert_idx,
                     } => self.move_tab_via_api(ws_idx, source_tab_idx, insert_idx),
+                    MouseAction::MoveTabToWorkspace { selected } => {
+                        if let Some(picker) = &mut self.state.move_tab_to_workspace {
+                            picker.list.select(selected);
+                        }
+                        self.move_tab_to_selected_workspace();
+                    }
+                    MouseAction::MoveTabAcrossWorkspaces {
+                        source_ws_idx,
+                        source_tab_idx,
+                        destination_ws_idx,
+                    } => self.move_tab_to_workspace_via_api(
+                        source_ws_idx,
+                        source_tab_idx,
+                        destination_ws_idx,
+                    ),
                     MouseAction::SetSplitRatio { path, ratio } => {
                         self.set_split_ratio_via_api(path, ratio)
                     }

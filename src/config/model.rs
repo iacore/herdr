@@ -402,6 +402,8 @@ pub struct KeysConfig {
     pub move_tab_previous: BindingConfig,
     /// Move the active tab one position toward the back. Unset by default.
     pub move_tab_next: BindingConfig,
+    /// Open the workspace picker to move the active tab. Unset by default.
+    pub move_tab_to_workspace: BindingConfig,
     /// Switch to tab 1-9. Default: "prefix+1..9".
     pub switch_tab: BindingConfig,
     /// Switch to workspace 1-9 from prefix mode. Unset by default.
@@ -534,6 +536,8 @@ pub(crate) struct KeysConfigOverlay {
     #[serde(skip_serializing_if = "Option::is_none")]
     move_tab_next: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    move_tab_to_workspace: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     switch_tab: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     switch_workspace: Option<BindingConfig>,
@@ -642,6 +646,7 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(next_tab);
         apply_field!(move_tab_previous);
         apply_field!(move_tab_next);
+        apply_field!(move_tab_to_workspace);
         apply_field!(switch_tab);
         apply_field!(switch_workspace);
         apply_field!(close_tab);
@@ -746,6 +751,7 @@ impl KeysConfig {
         copy_effective_action_field!(next_tab, keybinds.next_tab);
         copy_effective_action_field!(move_tab_previous, keybinds.move_tab_previous);
         copy_effective_action_field!(move_tab_next, keybinds.move_tab_next);
+        copy_effective_action_field!(move_tab_to_workspace, keybinds.move_tab_to_workspace);
         copy_effective_indexed_field!(switch_tab, keybinds.switch_tab);
         copy_effective_indexed_field!(switch_workspace, keybinds.switch_workspace);
         copy_effective_action_field!(close_tab, keybinds.close_tab);
@@ -1056,6 +1062,7 @@ impl Default for KeysConfig {
             next_tab: BindingConfig::one("prefix+n"),
             move_tab_previous: BindingConfig::empty(),
             move_tab_next: BindingConfig::empty(),
+            move_tab_to_workspace: BindingConfig::empty(),
             switch_tab: BindingConfig::one("prefix+1..9"),
             switch_workspace: BindingConfig::empty(),
             close_tab: BindingConfig::one("prefix+shift+x"),

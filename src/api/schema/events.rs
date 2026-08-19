@@ -483,8 +483,14 @@ pub enum EventData {
     TabMoved {
         tab_id: String,
         workspace_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous_tab_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous_workspace_id: Option<String>,
         insert_index: usize,
         tabs: Vec<TabInfo>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous_tabs: Option<Vec<TabInfo>>,
     },
     TabFocused {
         tab_id: String,

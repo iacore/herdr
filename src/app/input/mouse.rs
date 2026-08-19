@@ -51,6 +51,14 @@ pub(super) enum MouseAction {
         source_tab_idx: usize,
         insert_idx: usize,
     },
+    MoveTabToWorkspace {
+        selected: usize,
+    },
+    MoveTabAcrossWorkspaces {
+        source_ws_idx: usize,
+        source_tab_idx: usize,
+        destination_ws_idx: usize,
+    },
     SetSplitRatio {
         path: Vec<bool>,
         ratio: f32,
@@ -411,6 +419,14 @@ impl AppState {
                     return Some(MouseAction::RenameModal(action));
                 }
 
+                if self.mode == Mode::MoveTabToWorkspace {
+                    if let Some(selected) = self.move_tab_workspace_item_at(mouse.column, mouse.row)
+                    {
+                        return Some(MouseAction::MoveTabToWorkspace { selected });
+                    }
+                    return None;
+                }
+
                 if self.mode == Mode::ContextMenu {
                     let item_idx = self.context_menu_item_at(mouse.column, mouse.row);
                     if let Some(menu) = self.context_menu.take() {
@@ -688,6 +704,9 @@ impl AppState {
 
                 let workspace_drop_target = self.workspace_drop_target_at_row(mouse.row);
                 let tab_drop_index = self.tab_drop_index_at(mouse.column, mouse.row);
+                let tab_workspace_drop = in_sidebar
+                    .then(|| self.workspace_at_row(mouse.row))
+                    .flatten();
                 if self.drag.is_none() {
                     if let Some(press) = self.workspace_presses.get(&source_id) {
                         let delta_col = mouse.column.abs_diff(press.start_col);
@@ -714,7 +733,7 @@ impl AppState {
                         // Require a real drop target before opening a reorder,
                         // so a report from off the tab bar cannot start a drag
                         // that has nowhere to land.
-                        if tab_drop_index.is_some()
+                        if (tab_drop_index.is_some() || tab_workspace_drop.is_some())
                             && delta_col.max(delta_row) >= TAB_DRAG_THRESHOLD
                         {
                             self.drag = Some(DragState {
@@ -723,6 +742,8 @@ impl AppState {
                                     ws_idx: press.ws_idx,
                                     source_tab_idx: press.tab_idx,
                                     insert_idx: tab_drop_index,
+                                    destination_ws_idx: tab_workspace_drop
+                                        .filter(|destination| *destination != press.ws_idx),
                                 },
                             });
                         }
@@ -747,12 +768,18 @@ impl AppState {
                             source_id: drag_source_id,
                             ws_idx,
                             insert_idx,
+                            destination_ws_idx,
                             ..
                         },
                 }) = &mut self.drag
                 {
                     if *drag_source_id == source_id && self.active == Some(*ws_idx) {
-                        *insert_idx = tab_drop_index;
+                        *destination_ws_idx =
+                            tab_workspace_drop.filter(|destination| *destination != *ws_idx);
+                        *insert_idx = destination_ws_idx
+                            .is_none()
+                            .then_some(tab_drop_index)
+                            .flatten();
                     }
                 } else if let Some(drag) = &self.drag {
                     match &drag.target {
@@ -909,7 +936,26 @@ impl AppState {
                             DragTarget::TabReorder {
                                 ws_idx,
                                 source_tab_idx,
+                                destination_ws_idx: Some(destination_ws_idx),
+                                ..
+                            },
+                    }) => {
+                        if self.active == Some(ws_idx) && destination_ws_idx != ws_idx {
+                            self.mode = Mode::Terminal;
+                            return Some(MouseAction::MoveTabAcrossWorkspaces {
+                                source_ws_idx: ws_idx,
+                                source_tab_idx,
+                                destination_ws_idx,
+                            });
+                        }
+                    }
+                    Some(DragState {
+                        target:
+                            DragTarget::TabReorder {
+                                ws_idx,
+                                source_tab_idx,
                                 insert_idx: Some(insert_idx),
+                                destination_ws_idx: None,
                                 ..
                             },
                     }) => {
@@ -1026,6 +1072,14 @@ impl AppState {
                 let hovered = self.context_menu_item_at(mouse.column, mouse.row);
                 if let Some(menu) = &mut self.context_menu {
                     menu.list.hover(hovered);
+                }
+            }
+
+            MouseEventKind::Moved if self.mode == Mode::MoveTabToWorkspace => {
+                if let Some(selected) = self.move_tab_workspace_item_at(mouse.column, mouse.row) {
+                    if let Some(picker) = &mut self.move_tab_to_workspace {
+                        picker.list.select(selected);
+                    }
                 }
             }
 
@@ -1243,6 +1297,26 @@ impl AppState {
         let right = (sidebar.x + sidebar.width).max(terminal.x + terminal.width);
         let bottom = (sidebar.y + sidebar.height).max(terminal.y + terminal.height);
         Rect::new(x, y, right.saturating_sub(x), bottom.saturating_sub(y))
+    }
+
+    fn move_tab_workspace_item_at(&self, col: u16, row: u16) -> Option<usize> {
+        let picker = self.move_tab_to_workspace.as_ref()?;
+        let item_count =
+            super::modal::move_tab_workspace_indices(self, &picker.source_workspace_id).len();
+        (0..item_count).find(|idx| {
+            crate::ui::move_tab_workspace_row_rect(
+                self.screen_rect(),
+                item_count,
+                picker.list.selected,
+                *idx,
+            )
+            .is_some_and(|rect| {
+                col >= rect.x
+                    && col < rect.x.saturating_add(rect.width)
+                    && row >= rect.y
+                    && row < rect.y.saturating_add(rect.height)
+            })
+        })
     }
 
     pub(crate) fn context_menu_rect(&self) -> Option<Rect> {
@@ -4220,6 +4294,15 @@ mod tests {
             second_tab.y,
         ));
 
+        let close_idx = app
+            .state
+            .context_menu
+            .as_ref()
+            .expect("tab context menu")
+            .items()
+            .iter()
+            .position(|item| *item == "Close")
+            .expect("close item");
         let menu = app
             .state
             .context_menu_rect()
@@ -4227,7 +4310,7 @@ mod tests {
         app.handle_mouse(mouse(
             MouseEventKind::Down(MouseButton::Left),
             menu.x + 2,
-            menu.y + 3,
+            menu.y + 1 + close_idx as u16,
         ));
 
         assert_eq!(app.state.workspaces[0].tabs.len(), 1);
@@ -4239,6 +4322,53 @@ mod tests {
             .events_after(0)
             .iter()
             .any(|(_, event)| { matches!(event.event, crate::api::schema::EventKind::TabClosed) }));
+    }
+
+    #[test]
+    fn dragging_tab_onto_workspace_moves_and_follows_tab() {
+        let mut app = app_for_mouse_test();
+        let mut source = Workspace::test_new("source");
+        let moved_idx = source.test_add_tab(Some("moved"));
+        let moved_root = source.tabs[moved_idx].root_pane;
+        app.state.workspaces = vec![source, Workspace::test_new("destination")];
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        app.state.mode = Mode::Terminal;
+        app.state.ensure_test_terminals();
+
+        crate::ui::compute_view(&mut app.state, Rect::new(0, 0, 106, 30));
+        let source_tab = app.state.view.tab_hit_areas[moved_idx];
+        let destination = app
+            .state
+            .view
+            .workspace_card_areas
+            .iter()
+            .find(|card| card.ws_idx == 1)
+            .expect("destination workspace card")
+            .rect;
+
+        app.handle_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            source_tab.x + 1,
+            source_tab.y,
+        ));
+        app.handle_mouse(mouse(
+            MouseEventKind::Drag(MouseButton::Left),
+            destination.x + 1,
+            destination.y,
+        ));
+        app.handle_mouse(mouse(
+            MouseEventKind::Up(MouseButton::Left),
+            destination.x + 1,
+            destination.y,
+        ));
+
+        assert_eq!(app.state.workspaces[0].tabs.len(), 1);
+        assert_eq!(app.state.workspaces[1].tabs.len(), 2);
+        assert_eq!(app.state.workspaces[1].tabs[1].root_pane, moved_root);
+        assert_eq!(app.state.active, Some(1));
+        assert_eq!(app.state.workspaces[1].active_tab, 1);
+        app.state.assert_invariants_for_test();
     }
 
     #[test]

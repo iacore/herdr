@@ -1211,6 +1211,12 @@ fn render_workspace_list(
         }
         _ => None,
     };
+    let tab_destination_ws_idx = match app.drag.as_ref().map(|drag| &drag.target) {
+        Some(crate::app::state::DragTarget::TabReorder {
+            destination_ws_idx, ..
+        }) => *destination_ws_idx,
+        _ => None,
+    };
     let insertion_row = match app.drag.as_ref().map(|drag| &drag.target) {
         Some(crate::app::state::DragTarget::WorkspaceReorder {
             drop_target: Some(drop_target),
@@ -1243,13 +1249,14 @@ fn render_workspace_list(
         let selected = i == app.selected && is_navigating;
         let is_active = Some(i) == app.active;
         let is_dragged = dragged_ws_idx == Some(i);
-        let highlighted = selected || is_active || is_dragged;
+        let is_tab_destination = tab_destination_ws_idx == Some(i);
+        let highlighted = selected || is_active || is_dragged || is_tab_destination;
         let (agg_state, agg_seen) = ws.aggregate_state(&app.terminals);
 
         if highlighted {
             let bg = if selected {
                 p.selection_bg
-            } else if is_dragged {
+            } else if is_dragged || is_tab_destination {
                 p.surface1
             } else {
                 p.active_row_bg
@@ -1265,7 +1272,7 @@ fn render_workspace_list(
             }
         }
 
-        let name_style = if selected || is_active || is_dragged {
+        let name_style = if selected || is_active || is_dragged || is_tab_destination {
             Style::default().fg(p.text).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(p.subtext0)

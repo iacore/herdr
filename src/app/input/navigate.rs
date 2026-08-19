@@ -332,6 +332,12 @@ impl App {
                 }
                 leave_navigate_mode(&mut self.state);
             }
+            NavigateAction::MoveTabToWorkspace => {
+                if let Some(ws_idx) = self.state.active {
+                    let tab_idx = self.state.workspaces[ws_idx].active_tab;
+                    super::modal::open_move_tab_to_workspace(&mut self.state, ws_idx, tab_idx);
+                }
+            }
             NavigateAction::CloseTab => {
                 if !self.close_active_tab_via_api_requires_confirmation() {
                     leave_navigate_mode(&mut self.state);
@@ -526,7 +532,30 @@ impl App {
             "tui.tab.move",
             crate::api::schema::TabMoveParams {
                 tab_id,
+                workspace_id: None,
                 insert_index: insert_idx,
+            },
+        );
+    }
+
+    pub(crate) fn move_tab_to_workspace_via_api(
+        &mut self,
+        source_ws_idx: usize,
+        source_tab_idx: usize,
+        destination_ws_idx: usize,
+    ) {
+        let Some(tab_id) = self.public_tab_id(source_ws_idx, source_tab_idx) else {
+            return;
+        };
+        let Some(destination) = self.state.workspaces.get(destination_ws_idx) else {
+            return;
+        };
+        self.runtime_tab_move(
+            "tui.tab.move_workspace",
+            crate::api::schema::TabMoveParams {
+                tab_id,
+                workspace_id: Some(destination.id.clone()),
+                insert_index: destination.tabs.len(),
             },
         );
     }
@@ -1400,6 +1429,7 @@ pub(crate) enum NavigateAction {
     NextTab,
     MoveTabPrevious,
     MoveTabNext,
+    MoveTabToWorkspace,
     CloseTab,
     RenamePane,
     FocusPaneLeft,
@@ -1547,6 +1577,10 @@ fn non_indexed_action_for_key(
         (&kb.next_tab, NavigateAction::NextTab),
         (&kb.move_tab_previous, NavigateAction::MoveTabPrevious),
         (&kb.move_tab_next, NavigateAction::MoveTabNext),
+        (
+            &kb.move_tab_to_workspace,
+            NavigateAction::MoveTabToWorkspace,
+        ),
         (&kb.close_tab, NavigateAction::CloseTab),
         (&kb.rename_pane, NavigateAction::RenamePane),
         (&kb.edit_scrollback, NavigateAction::EditScrollback),
@@ -1755,6 +1789,12 @@ pub(super) fn execute_navigate_action_in_context(
         NavigateAction::MoveTabNext => {
             move_active_tab_relative(state, 1);
             leave_navigate_mode(state);
+        }
+        NavigateAction::MoveTabToWorkspace => {
+            if let Some(ws_idx) = state.active {
+                let tab_idx = state.workspaces[ws_idx].active_tab;
+                super::modal::open_move_tab_to_workspace(state, ws_idx, tab_idx);
+            }
         }
         NavigateAction::CloseTab => {
             if !state.close_tab() {
@@ -2768,6 +2808,30 @@ resize_pane_left = "prefix+shift+left"
         assert_eq!(tab_labels(&state), vec!["a", "c", "b"]);
         assert_eq!(state.workspaces[0].active_tab, 2);
         state.workspaces[0].assert_invariants_for_test();
+    }
+
+    #[test]
+    fn move_tab_to_workspace_shortcut_opens_picker() {
+        let mut state = state_with_workspaces(&["source", "destination"]);
+        let moved_idx = state.workspaces[0].test_add_tab(Some("moved"));
+        state.workspaces[0].switch_tab(moved_idx);
+        let moved_id = crate::workspace::public_tab_id_for_number(
+            &state.workspaces[0].id,
+            state.workspaces[0].tabs[moved_idx].number,
+        );
+        state.keybinds.move_tab_to_workspace = crate::config::ActionKeybinds::direct("alt+m");
+        let key = TerminalKey::new(KeyCode::Char('m'), KeyModifiers::ALT);
+
+        let action = terminal_direct_navigation_action(&state, key);
+        assert_eq!(action, Some(NavigateAction::MoveTabToWorkspace));
+        execute_navigate_action(&mut state, action.expect("move tab action"));
+
+        assert_eq!(state.mode, Mode::MoveTabToWorkspace);
+        let picker = state
+            .move_tab_to_workspace
+            .as_ref()
+            .expect("workspace picker");
+        assert_eq!(picker.tab_id, moved_id);
     }
 
     #[test]

@@ -611,6 +611,7 @@ impl App {
             selection: None,
             selection_autoscroll: None,
             context_menu: None,
+            move_tab_to_workspace: None,
             update_available,
             update_install_command,
             latest_release_notes_available,
@@ -1924,6 +1925,9 @@ impl App {
             }
             Mode::ContextMenu => {
                 self.handle_context_menu_key_via_api(key_event);
+            }
+            Mode::MoveTabToWorkspace => {
+                self.handle_move_tab_to_workspace_key(key_event);
             }
             Mode::KeybindHelp => {
                 input::handle_keybind_help_key(&mut self.state, key);

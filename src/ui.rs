@@ -22,9 +22,11 @@ mod tabs;
 mod text;
 mod widgets;
 
+pub(crate) use self::dialogs::move_tab_workspace_row_rect;
 use self::dialogs::{
-    render_confirm_close_overlay, render_new_linked_worktree_overlay,
-    render_open_existing_worktree_overlay, render_remove_worktree_overlay, render_rename_overlay,
+    render_confirm_close_overlay, render_move_tab_to_workspace_overlay,
+    render_new_linked_worktree_overlay, render_open_existing_worktree_overlay,
+    render_remove_worktree_overlay, render_rename_overlay,
 };
 use self::keybind_help::render_keybind_help_overlay;
 use self::menus::{
@@ -444,6 +446,9 @@ pub fn render_with_runtime_registry(
         }
         Mode::ContextMenu => {
             render_context_menu(app, frame);
+        }
+        Mode::MoveTabToWorkspace => {
+            render_move_tab_to_workspace_overlay(app, terminal_runtimes, frame, frame.area());
         }
         Mode::Settings => render_settings_overlay(app, frame, frame.area()),
         Mode::RenameWorkspace | Mode::RenameTab | Mode::RenamePane => {

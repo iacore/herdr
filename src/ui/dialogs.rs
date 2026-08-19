@@ -440,6 +440,129 @@ pub(super) fn render_remove_worktree_overlay(app: &AppState, frame: &mut Frame, 
     );
 }
 
+pub(crate) fn move_tab_workspace_inner_rect(area: Rect, item_count: usize) -> Option<Rect> {
+    let height = (item_count as u16).saturating_add(5).clamp(7, 20);
+    let popup = centered_popup_rect(area, 56, height)?;
+    Some(Rect::new(
+        popup.x.saturating_add(1),
+        popup.y.saturating_add(1),
+        popup.width.saturating_sub(2),
+        popup.height.saturating_sub(2),
+    ))
+}
+
+fn move_tab_workspace_visible_start(item_count: usize, selected: usize, max_rows: usize) -> usize {
+    if max_rows == 0 || item_count <= max_rows {
+        return 0;
+    }
+    selected
+        .saturating_sub(max_rows / 2)
+        .min(item_count - max_rows)
+}
+
+pub(crate) fn move_tab_workspace_row_rect(
+    area: Rect,
+    item_count: usize,
+    selected: usize,
+    idx: usize,
+) -> Option<Rect> {
+    let inner = move_tab_workspace_inner_rect(area, item_count)?;
+    let max_rows = inner.height.saturating_sub(3) as usize;
+    let start = move_tab_workspace_visible_start(item_count, selected, max_rows);
+    if idx < start || idx >= start.saturating_add(max_rows) {
+        return None;
+    }
+    let y = inner
+        .y
+        .saturating_add(2)
+        .saturating_add(idx.saturating_sub(start) as u16);
+    Some(Rect::new(inner.x, y, inner.width, 1))
+}
+
+pub(super) fn render_move_tab_to_workspace_overlay(
+    app: &AppState,
+    terminal_runtimes: &TerminalRuntimeRegistry,
+    frame: &mut Frame,
+    area: Rect,
+) {
+    let Some(picker) = app.move_tab_to_workspace.as_ref() else {
+        return;
+    };
+    let destinations = app
+        .workspaces
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, workspace)| (workspace.id != picker.source_workspace_id).then_some(idx))
+        .collect::<Vec<_>>();
+    super::dim_background(frame, area);
+    let height = (destinations.len() as u16).saturating_add(5).clamp(7, 20);
+    let Some(inner) = render_modal_shell(frame, area, 56, height, &app.palette) else {
+        return;
+    };
+    render_modal_header(
+        frame,
+        Rect::new(inner.x, inner.y, inner.width, 1),
+        "move tab to workspace",
+        &app.palette,
+    );
+    frame.render_widget(
+        Paragraph::new("─".repeat(inner.width as usize))
+            .style(Style::default().fg(app.palette.surface1)),
+        Rect::new(inner.x, inner.y.saturating_add(1), inner.width, 1),
+    );
+    let max_rows = inner.height.saturating_sub(3) as usize;
+    let start =
+        move_tab_workspace_visible_start(destinations.len(), picker.list.selected, max_rows);
+    for (visible_idx, (destination_idx, ws_idx)) in destinations
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(max_rows)
+        .enumerate()
+    {
+        let selected = destination_idx == picker.list.selected;
+        let marker = if selected { "›" } else { " " };
+        let name = app.workspaces[*ws_idx].display_name_from(&app.terminals, terminal_runtimes);
+        let style = if selected {
+            Style::default()
+                .fg(app.palette.text)
+                .bg(app.palette.surface0)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.palette.subtext0)
+        };
+        frame.render_widget(
+            Paragraph::new(truncate_end(
+                &format!("{marker} {name}"),
+                inner.width as usize,
+            ))
+            .style(style),
+            Rect::new(
+                inner.x,
+                inner.y.saturating_add(2 + visible_idx as u16),
+                inner.width,
+                1,
+            ),
+        );
+    }
+    if destinations.is_empty() {
+        frame.render_widget(
+            Paragraph::new(" no other workspace").style(Style::default().fg(app.palette.overlay0)),
+            Rect::new(inner.x, inner.y.saturating_add(2), inner.width, 1),
+        );
+    }
+    frame.render_widget(
+        Paragraph::new("↑/↓ select  ·  enter move  ·  esc cancel")
+            .style(Style::default().fg(app.palette.overlay0)),
+        Rect::new(
+            inner.x,
+            inner.y.saturating_add(inner.height.saturating_sub(1)),
+            inner.width,
+            1,
+        ),
+    );
+}
+
 pub(super) fn render_open_existing_worktree_overlay(app: &AppState, frame: &mut Frame, area: Rect) {
     let Some(open) = app.worktree_open.as_ref() else {
         return;

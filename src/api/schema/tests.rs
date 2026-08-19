@@ -485,8 +485,11 @@ fn event_envelope_round_trips() {
             data: EventData::TabMoved {
                 tab_id: "w_1:1".into(),
                 workspace_id: "w_1".into(),
+                previous_tab_id: None,
+                previous_workspace_id: None,
                 insert_index: 1,
                 tabs: vec![],
+                previous_tabs: None,
             },
         },
         EventEnvelope {
@@ -1090,6 +1093,7 @@ fn authority_mutation_requests_round_trip() {
         id: "move_tab".into(),
         method: Method::TabMove(TabMoveParams {
             tab_id: "w1:1".into(),
+            workspace_id: Some("w2".into()),
             insert_index: 1,
         }),
     };

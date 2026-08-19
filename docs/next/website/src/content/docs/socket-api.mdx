@@ -301,6 +301,18 @@ pairs to the newly launched process only. Herdr also injects `HERDR_SOCKET_PATH`
 managed pane processes. Herdr-managed variables are authoritative when they
 conflict with caller-provided env.
 
+`tab.move` reorders a tab in its current workspace. Set `workspace_id` to move
+the tab to another workspace. The destination workspace receives the tab at
+`insert_index`. A source workspace must retain at least one tab.
+
+```json
+{"id":"req_move_tab","method":"tab.move","params":{"tab_id":"w1:t2","workspace_id":"w2","insert_index":1}}
+```
+
+A cross-workspace move keeps internal pane identities, running processes, the
+tab label, layout, and focus state. Public tab and pane ids are reassigned for the destination
+workspace. Previous public pane ids remain valid aliases.
+
 `pane.swap` supports directional and explicit forms:
 
 ```json
@@ -810,7 +822,9 @@ Workspace event subscriptions include `workspace.created`, `workspace.updated`, 
 Tab event subscriptions include `tab.created`, `tab.closed`, `tab.focused`,
 `tab.renamed`, and `tab.moved`. `tab.moved` includes the moved `tab_id`,
 `workspace_id`, requested `insert_index`, and updated ordered `tabs` list for
-that workspace.
+that workspace. A cross-workspace event also includes `previous_tab_id`,
+`previous_workspace_id`, and the source workspace's updated `previous_tabs`
+list.
 Pane event subscriptions include `pane.created`, `pane.updated`, `pane.closed`, `pane.focused`,
 `pane.moved`, `pane.exited`, `pane.agent_detected`,
 `pane.output_matched`, `pane.agent_status_changed`, and `pane.scroll_changed`.

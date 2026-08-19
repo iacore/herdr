@@ -397,6 +397,27 @@
                   "minimum": 0,
                   "type": "integer"
                 },
+                "previous_tab_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "previous_tabs": {
+                  "items": {
+                    "$ref": "#/schemas/event/$defs/TabInfo"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "previous_workspace_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "tab_id": {
                   "type": "string"
                 },
@@ -4102,6 +4123,12 @@
             },
             "tab_id": {
               "type": "string"
+            },
+            "workspace_id": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [
@@ -6670,6 +6697,27 @@
                   "format": "uint",
                   "minimum": 0,
                   "type": "integer"
+                },
+                "previous_tab_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "previous_tabs": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/TabInfo"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "previous_workspace_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "tab_id": {
                   "type": "string"

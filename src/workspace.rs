@@ -666,6 +666,32 @@ impl Workspace {
         true
     }
 
+    pub(crate) fn take_tab_for_move(&mut self, tab_idx: usize) -> Option<Tab> {
+        if self.tabs.len() <= 1 || tab_idx >= self.tabs.len() {
+            return None;
+        }
+        let tab = self.tabs.remove(tab_idx);
+        for pane_id in tab.panes.keys() {
+            self.unregister_pane(*pane_id);
+        }
+        self.adjust_active_tab_after_removal(tab_idx);
+        Some(tab)
+    }
+
+    pub(crate) fn insert_moved_tab(&mut self, mut tab: Tab, insert_idx: usize) -> Option<usize> {
+        if insert_idx > self.tabs.len() {
+            return None;
+        }
+        tab.number = self.next_public_tab_number;
+        self.next_public_tab_number += 1;
+        for pane_id in tab.panes.keys() {
+            self.register_new_pane(*pane_id);
+        }
+        self.tabs.insert(insert_idx, tab);
+        self.active_tab = insert_idx;
+        Some(insert_idx)
+    }
+
     #[cfg(test)]
     pub fn close_active_tab(&mut self) -> bool {
         self.close_tab(self.active_tab)
@@ -1233,7 +1259,6 @@ impl Workspace {
         false
     }
 
-    #[cfg(test)]
     fn register_new_pane(&mut self, pane_id: PaneId) {
         self.register_new_pane_with_number(pane_id, self.next_public_pane_number);
     }

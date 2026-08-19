@@ -840,6 +840,7 @@ pub enum Mode {
     Resize,
     ConfirmClose,
     ContextMenu,
+    MoveTabToWorkspace,
     Settings,
     GlobalMenu,
     KeybindHelp,
@@ -848,7 +849,10 @@ pub enum Mode {
 
 impl Mode {
     pub(crate) fn mouse_motion_changes_view(self) -> bool {
-        matches!(self, Self::GlobalMenu | Self::ContextMenu | Self::Navigator)
+        matches!(
+            self,
+            Self::GlobalMenu | Self::ContextMenu | Self::MoveTabToWorkspace | Self::Navigator
+        )
     }
 
     /// Whether keys in this mode are commands/navigation (an ASCII input source is wanted) rather
@@ -872,6 +876,7 @@ impl Mode {
                 | Mode::ConfirmClose
                 | Mode::ConfirmRemoveWorktree
                 | Mode::ContextMenu
+                | Mode::MoveTabToWorkspace
                 | Mode::GlobalMenu
                 | Mode::KeybindHelp
         )
@@ -1086,6 +1091,12 @@ pub struct SelectionListState {
     pub selected: usize,
 }
 
+pub struct MoveTabToWorkspaceState {
+    pub tab_id: String,
+    pub source_workspace_id: String,
+    pub list: SelectionListState,
+}
+
 impl SelectionListState {
     pub fn new(selected: usize) -> Self {
         Self { selected }
@@ -1144,6 +1155,7 @@ pub(crate) enum DragTarget {
         ws_idx: usize,
         source_tab_idx: usize,
         insert_idx: Option<usize>,
+        destination_ws_idx: Option<usize>,
     },
     WorkspaceListScrollbar {
         grab_row_offset: u16,
@@ -1250,7 +1262,9 @@ impl ContextMenuState {
                 "Open worktree...",
                 if collapsed { "Expand" } else { "Collapse" },
             ],
-            ContextMenuKind::Tab { .. } => vec!["New tab", "Rename", "Close"],
+            ContextMenuKind::Tab { .. } => {
+                vec!["New tab", "Rename", "Move to workspace...", "Close"]
+            }
             ContextMenuKind::Pane {
                 source_pane_id,
                 has_manual_label,
@@ -1436,6 +1450,7 @@ pub struct AppState {
     pub selection: Option<Selection>,
     pub selection_autoscroll: Option<SelectionAutoscroll>,
     pub context_menu: Option<ContextMenuState>,
+    pub move_tab_to_workspace: Option<MoveTabToWorkspaceState>,
     // Notifications
     pub update_available: Option<String>,
     pub update_install_command: String,
@@ -1833,6 +1848,7 @@ impl AppState {
             selection: None,
             selection_autoscroll: None,
             context_menu: None,
+            move_tab_to_workspace: None,
             update_available: None,
             update_install_command: "herdr update".into(),
             latest_release_notes_available: false,
@@ -2211,9 +2227,14 @@ impl AppState {
                     ws_idx,
                     source_tab_idx,
                     insert_idx,
+                    destination_ws_idx,
                     ..
                 } => {
                     assert_tab_index(*ws_idx, *source_tab_idx, "tab drag source");
+                    if let Some(destination_ws_idx) = destination_ws_idx {
+                        assert_workspace_index(*destination_ws_idx, "tab drag destination");
+                        assert_ne!(*destination_ws_idx, *ws_idx);
+                    }
                     if let Some(insert_idx) = insert_idx {
                         assert!(
                             *insert_idx <= self.workspaces[*ws_idx].tabs.len(),

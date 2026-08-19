@@ -33,6 +33,8 @@ pub struct TabRenameParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TabMoveParams {
     pub tab_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub insert_index: usize,
 }
 
