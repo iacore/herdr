@@ -206,6 +206,8 @@ pub(super) enum ClientChromeDrag {
         tab_id: String,
         workspace_id: String,
         insert_index: Option<usize>,
+        /// Workspace row under the pointer during the drag, when it is not the source workspace.
+        destination_workspace_id: Option<String>,
     },
     Workspace {
         source_workspace_id: String,

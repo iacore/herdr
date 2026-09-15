@@ -1093,6 +1093,222 @@ fn tab_drag_clears_its_drop_target_after_leaving_the_tab_row() {
 }
 
 #[test]
+fn tab_drag_onto_another_workspace_row_moves_the_tab_there() {
+    let mut projected = snapshot();
+    let mut second_tab = projected.tabs[0].clone();
+    second_tab.tab_id = "tab_2".into();
+    second_tab.number = 2;
+    second_tab.label = "2".into();
+    second_tab.focused = false;
+    projected.tabs.push(second_tab);
+    let mut other = projected.workspaces[0].clone();
+    other.workspace_id = "ws_2".into();
+    other.active_tab_id = "tab_3".into();
+    other.number = 2;
+    other.label = "other".into();
+    other.focused = false;
+    projected.workspaces.push(other);
+    let mut other_tab = projected.tabs[0].clone();
+    other_tab.tab_id = "tab_3".into();
+    other_tab.workspace_id = "ws_2".into();
+    other_tab.label = "1".into();
+    other_tab.focused = false;
+    projected.tabs.push(other_tab);
+
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected));
+    state.set_endpoint_methods(Some(vec!["tab.move_to_workspace".into()]));
+    state.set_pane_surface(surface());
+    state.compose(106, 20).expect("two workspaces");
+    let source = state.hits.tabs[1].0;
+    let destination = state
+        .hits
+        .workspaces
+        .iter()
+        .find(|hit| hit.workspace_id == "ws_2")
+        .expect("destination workspace row")
+        .rect;
+
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: source.x + 1,
+        row: source.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Drag(MouseButton::Left),
+        column: destination.x + 1,
+        row: destination.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    assert!(matches!(
+        &state.chrome_drag,
+        Some(ClientChromeDrag::Tab {
+            tab_id,
+            insert_index: None,
+            destination_workspace_id: Some(workspace_id),
+            ..
+        }) if tab_id == "tab_2" && workspace_id == "ws_2"
+    ));
+
+    let release =
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: destination.x + 1,
+            row: destination.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+    let [ClientShellAction::Endpoint { request, .. }] = &release.actions[..] else {
+        panic!("tab drag should use endpoint API");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::TabMoveToWorkspace(params)
+            if params.tab_id == "tab_2"
+                && params.workspace_id == "ws_2"
+                && params.insert_index == 1
+    ));
+}
+
+/// A server that predates `tab.move_to_workspace` must not receive it: the row
+/// stays inert so the drag can never be answered as a plain reorder.
+#[test]
+fn tab_drag_ignores_workspace_rows_without_the_transfer_method() {
+    let mut projected = snapshot();
+    let mut second_tab = projected.tabs[0].clone();
+    second_tab.tab_id = "tab_2".into();
+    second_tab.number = 2;
+    second_tab.label = "2".into();
+    second_tab.focused = false;
+    projected.tabs.push(second_tab);
+    let mut other = projected.workspaces[0].clone();
+    other.workspace_id = "ws_2".into();
+    other.active_tab_id = "tab_3".into();
+    other.number = 2;
+    other.label = "other".into();
+    other.focused = false;
+    projected.workspaces.push(other);
+    let mut other_tab = projected.tabs[0].clone();
+    other_tab.tab_id = "tab_3".into();
+    other_tab.workspace_id = "ws_2".into();
+    other_tab.label = "1".into();
+    other_tab.focused = false;
+    projected.tabs.push(other_tab);
+
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected));
+    state.set_endpoint_methods(Some(vec!["tab.move".into()]));
+    state.set_pane_surface(surface());
+    state.compose(106, 20).expect("two workspaces");
+    let source = state.hits.tabs[1].0;
+    let destination = state
+        .hits
+        .workspaces
+        .iter()
+        .find(|hit| hit.workspace_id == "ws_2")
+        .expect("destination workspace row")
+        .rect;
+
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: source.x + 1,
+        row: source.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Drag(MouseButton::Left),
+        column: destination.x + 1,
+        row: destination.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    assert!(
+        state.chrome_drag.is_none(),
+        "a workspace row is not a drop target without the transfer method"
+    );
+
+    let release =
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: destination.x + 1,
+            row: destination.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+    assert!(release.actions.is_empty());
+}
+
+#[test]
+fn tab_drag_onto_another_workspace_row_moves_a_lone_tab() {
+    let mut projected = snapshot();
+    let mut other = projected.workspaces[0].clone();
+    other.workspace_id = "ws_2".into();
+    other.active_tab_id = "tab_2".into();
+    other.number = 2;
+    other.label = "other".into();
+    other.focused = false;
+    projected.workspaces.push(other);
+    let mut other_tab = projected.tabs[0].clone();
+    other_tab.tab_id = "tab_2".into();
+    other_tab.workspace_id = "ws_2".into();
+    other_tab.label = "1".into();
+    other_tab.focused = false;
+    projected.tabs.push(other_tab);
+
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected));
+    state.set_endpoint_methods(Some(vec!["tab.move_to_workspace".into()]));
+    state.set_pane_surface(surface());
+    state.compose(106, 20).expect("two workspaces");
+    let source = state.hits.tabs[0].0;
+    let destination = state
+        .hits
+        .workspaces
+        .iter()
+        .find(|hit| hit.workspace_id == "ws_2")
+        .expect("destination workspace row")
+        .rect;
+
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: source.x + 1,
+        row: source.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Drag(MouseButton::Left),
+        column: destination.x + 1,
+        row: destination.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    assert!(matches!(
+        &state.chrome_drag,
+        Some(ClientChromeDrag::Tab {
+            tab_id,
+            insert_index: None,
+            destination_workspace_id: Some(workspace_id),
+            ..
+        }) if tab_id == "tab_1" && workspace_id == "ws_2"
+    ));
+
+    let release =
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: destination.x + 1,
+            row: destination.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+    let [ClientShellAction::Endpoint { request, .. }] = &release.actions[..] else {
+        panic!("a lone tab must still be movable to another workspace");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::TabMoveToWorkspace(params)
+            if params.tab_id == "tab_1"
+                && params.workspace_id == "ws_2"
+                && params.insert_index == 1
+    ));
+}
+
+#[test]
 fn tab_wheel_switches_tabs_without_changing_overflow_scroll() {
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     state.set_snapshot(Box::new(snapshot()));

@@ -564,6 +564,9 @@ fn event_envelope_round_trips() {
                 workspace_id: "w_1".into(),
                 insert_index: 1,
                 tabs: vec![],
+                previous_tab_id: None,
+                previous_workspace_id: None,
+                previous_tabs: None,
             },
         },
         EventEnvelope {
@@ -1185,6 +1188,19 @@ fn authority_mutation_requests_round_trip() {
     assert_eq!(json["method"], "tab.move");
     let restored: Request = serde_json::from_value(json).unwrap();
     assert_eq!(restored, tab_move);
+
+    let tab_move_to_workspace = Request {
+        id: "move_tab_to_workspace".into(),
+        method: Method::TabMoveToWorkspace(TabMoveToWorkspaceParams {
+            tab_id: "w1:1".into(),
+            workspace_id: "w2".into(),
+            insert_index: 1,
+        }),
+    };
+    let json = serde_json::to_value(&tab_move_to_workspace).unwrap();
+    assert_eq!(json["method"], "tab.move_to_workspace");
+    let restored: Request = serde_json::from_value(json).unwrap();
+    assert_eq!(restored, tab_move_to_workspace);
 
     let pane_focus = Request {
         id: "focus_pane".into(),

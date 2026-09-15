@@ -36,6 +36,15 @@ pub struct TabMoveParams {
     pub insert_index: usize,
 }
 
+/// Move a tab out of its workspace, keeping its panes, layout, and processes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TabMoveToWorkspaceParams {
+    pub tab_id: String,
+    /// Destination workspace.
+    pub workspace_id: String,
+    pub insert_index: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TabInfo {
     pub tab_id: String,

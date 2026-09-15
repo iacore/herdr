@@ -62,6 +62,7 @@ impl ClientShellState {
             sidebar_collapsed: false,
             sidebar_section_split: self.sidebar_section_split,
             tab_drag_insert_index: None,
+            tab_drag_destination_workspace_id: None,
             selected_workspace_id: self
                 .navigate_workspace_id
                 .as_ref()
@@ -167,6 +168,13 @@ impl ClientShellState {
             Some(ClientChromeDrag::Tab { insert_index, .. }) => *insert_index,
             _ => None,
         };
+        let tab_drag_destination_workspace_id = match &self.chrome_drag {
+            Some(ClientChromeDrag::Tab {
+                destination_workspace_id,
+                ..
+            }) => destination_workspace_id.as_deref(),
+            _ => None,
+        };
         let (dragged_workspace_id, workspace_drop_indicator_row) = match &self.chrome_drag {
             Some(ClientChromeDrag::Workspace {
                 source_workspace_id,
@@ -197,6 +205,7 @@ impl ClientShellState {
                 sidebar_collapsed: self.sidebar_collapsed,
                 sidebar_section_split: self.sidebar_section_split,
                 tab_drag_insert_index,
+                tab_drag_destination_workspace_id,
                 selected_workspace_id: self
                     .navigate_workspace_id
                     .as_ref()

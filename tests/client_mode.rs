@@ -2086,3 +2086,239 @@ fn client_receives_notify_on_agent_state_change() {
 
     cleanup_spawned_herdr(spawned, base);
 }
+
+// ---------------------------------------------------------------------------
+// Tab drag between workspaces
+// ---------------------------------------------------------------------------
+
+fn screen_text(output: &SharedOutput) -> String {
+    let bytes = output
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .bytes
+        .clone();
+    terminal_screen::text(&bytes, 80, 24)
+}
+
+fn wait_for_screen(output: &SharedOutput, needles: &[&str]) -> String {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let screen = screen_text(output);
+        if needles.iter().all(|needle| screen.contains(needle)) {
+            return screen;
+        }
+        if Instant::now() >= deadline {
+            panic!("screen never showed {needles:?}; last frame:\n{screen}");
+        }
+        thread::sleep(Duration::from_millis(30));
+    }
+}
+
+/// Zero-based (column, row) of `needle` in the first line containing it.
+fn cell_of(text: &str, needle: &str) -> Option<(u16, u16)> {
+    text.lines().enumerate().find_map(|(row, line)| {
+        let byte = line.find(needle)?;
+        Some((line[..byte].chars().count() as u16, row as u16))
+    })
+}
+
+fn api_call(socket_path: &PathBuf, method: &str, params: Value) -> Value {
+    send_json_request(
+        socket_path,
+        &serde_json::json!({"id": method, "method": method, "params": params}).to_string(),
+    )
+}
+
+/// (tab_id, label) pairs of one workspace.
+fn workspace_tabs(socket_path: &PathBuf, workspace_id: &str) -> Vec<(String, String)> {
+    let response = api_call(
+        socket_path,
+        "tab.list",
+        serde_json::json!({"workspace_id": workspace_id}),
+    );
+    response["result"]["tabs"]
+        .as_array()
+        .map(|tabs| {
+            tabs.iter()
+                .map(|tab| {
+                    (
+                        tab["tab_id"].as_str().unwrap_or_default().to_string(),
+                        tab["label"].as_str().unwrap_or_default().to_string(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn workspace_ids(socket_path: &PathBuf) -> Vec<String> {
+    let response = api_call(socket_path, "workspace.list", serde_json::json!({}));
+    response["result"]["workspaces"]
+        .as_array()
+        .map(|workspaces| {
+            workspaces
+                .iter()
+                .filter_map(|workspace| workspace["workspace_id"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn create_workspace(socket_path: &PathBuf, cwd: &PathBuf, label: &str) -> (String, String) {
+    let created = api_call(
+        socket_path,
+        "workspace.create",
+        serde_json::json!({"cwd": cwd, "focus": true}),
+    );
+    assert_eq!(created["result"]["type"], "workspace_created", "{created}");
+    let workspace_id = created["result"]["workspace"]["workspace_id"]
+        .as_str()
+        .expect("workspace id")
+        .to_string();
+    let tab_id = created["result"]["tab"]["tab_id"]
+        .as_str()
+        .expect("root tab id")
+        .to_string();
+    let renamed = api_call(
+        socket_path,
+        "workspace.rename",
+        serde_json::json!({"workspace_id": workspace_id, "label": label}),
+    );
+    assert!(renamed.get("result").is_some(), "{renamed}");
+    (workspace_id, tab_id)
+}
+
+fn rename_tab(socket_path: &PathBuf, tab_id: &str, label: &str) {
+    let renamed = api_call(
+        socket_path,
+        "tab.rename",
+        serde_json::json!({"tab_id": tab_id, "label": label}),
+    );
+    assert!(renamed.get("result").is_some(), "{renamed}");
+}
+
+/// Press a tab in the tab bar, drag it onto a sidebar workspace row, release.
+fn drag_tab_onto_row(input: &mut dyn Write, tab: (u16, u16), row: (u16, u16)) {
+    let sgr = |code: u8, cell: (u16, u16), terminator: char| {
+        format!("\x1b[<{code};{};{}{terminator}", cell.0 + 1, cell.1 + 1).into_bytes()
+    };
+    input.write_all(&sgr(0, (tab.0 + 1, tab.1), 'M')).unwrap();
+    input
+        .write_all(&sgr(32, (tab.0 + 1, tab.1 + 1), 'M'))
+        .unwrap();
+    input.write_all(&sgr(32, (10, tab.1 + 2), 'M')).unwrap();
+    input.write_all(&sgr(32, (row.0 + 2, row.1), 'M')).unwrap();
+    input.write_all(&sgr(0, (row.0 + 2, row.1), 'm')).unwrap();
+}
+
+fn spawn_drag_client() -> (SpawnedHerdr, SpawnedHerdr, SharedOutput, PathBuf, PathBuf) {
+    let base = unique_test_dir();
+    fs::create_dir_all(&base).unwrap();
+    let config_home = base.join("config");
+    let runtime_dir = base.join("runtime");
+    let api_socket = runtime_dir.join("herdr.sock");
+    let client_socket = runtime_dir.join("herdr-client.sock");
+    let (server, client, output) = attach_thin_client_with_config(
+        &config_home,
+        &runtime_dir,
+        &api_socket,
+        &client_socket,
+        "onboarding = false\n[ui]\nmouse_capture = true\n",
+    );
+    (server, client, output, api_socket, base)
+}
+
+#[test]
+fn dragging_a_tab_onto_another_workspace_row_moves_it() {
+    let _lock = test_lock();
+    let (server, client, output, api_socket, base) = spawn_drag_client();
+
+    let (destination_id, _) = create_workspace(&api_socket, &base, "space-dest");
+    let (source_id, source_first_tab) = create_workspace(&api_socket, &base, "space-src");
+    rename_tab(&api_socket, &source_first_tab, "tab-a");
+    let second = api_call(
+        &api_socket,
+        "tab.create",
+        serde_json::json!({"workspace_id": source_id, "focus": true}),
+    );
+    assert_eq!(second["result"]["type"], "tab_created", "{second}");
+    let second_tab_id = second["result"]["tab"]["tab_id"]
+        .as_str()
+        .expect("second tab id")
+        .to_string();
+    rename_tab(&api_socket, &second_tab_id, "tab-b");
+
+    let screen = wait_for_screen(&output, &["space-src", "space-dest", "tab-a", "tab-b"]);
+    let tab_cell = cell_of(&screen, "tab-a").expect("tab-a is on screen");
+    let row_cell = cell_of(&screen, "space-dest").expect("space-dest row is on screen");
+
+    let mut input = client._master.as_ref().unwrap().take_writer().unwrap();
+    drag_tab_onto_row(&mut input, tab_cell, row_cell);
+
+    assert!(
+        wait_until(Duration::from_secs(6), Duration::from_millis(25), || {
+            workspace_tabs(&api_socket, &destination_id)
+                .iter()
+                .any(|(_, label)| label == "tab-a")
+        }),
+        "dragging tab-a onto the space-dest row must move it; source={:?} destination={:?}\nframe:\n{}",
+        workspace_tabs(&api_socket, &source_id),
+        workspace_tabs(&api_socket, &destination_id),
+        screen_text(&output),
+    );
+    assert_eq!(
+        workspace_tabs(&api_socket, &source_id)
+            .iter()
+            .map(|(_, label)| label.clone())
+            .collect::<Vec<_>>(),
+        vec!["tab-b".to_string()],
+        "source workspace keeps its remaining tab"
+    );
+
+    drop(input);
+    drop(server);
+    cleanup_spawned_herdr(client, base);
+}
+
+/// A workspace whose only tab is dragged out keeps nothing behind: the tab lands
+/// in the destination and the emptied source workspace closes.
+#[test]
+fn dragging_the_only_tab_of_a_workspace_closes_the_source_workspace() {
+    let _lock = test_lock();
+    let (server, client, output, api_socket, base) = spawn_drag_client();
+
+    let (destination_id, _) = create_workspace(&api_socket, &base, "space-dest");
+    let (source_id, source_tab) = create_workspace(&api_socket, &base, "space-src");
+    rename_tab(&api_socket, &source_tab, "tab-a");
+    assert_eq!(workspace_tabs(&api_socket, &source_id).len(), 1);
+
+    let screen = wait_for_screen(&output, &["space-src", "space-dest", "tab-a"]);
+    let tab_cell = cell_of(&screen, "tab-a").expect("tab-a is on screen");
+    let row_cell = cell_of(&screen, "space-dest").expect("space-dest row is on screen");
+
+    let mut input = client._master.as_ref().unwrap().take_writer().unwrap();
+    drag_tab_onto_row(&mut input, tab_cell, row_cell);
+
+    assert!(
+        wait_until(Duration::from_secs(6), Duration::from_millis(25), || {
+            workspace_tabs(&api_socket, &destination_id)
+                .iter()
+                .any(|(_, label)| label == "tab-a")
+        }),
+        "the lone tab of space-src must move to space-dest; source={:?} destination={:?}\nframe:\n{}",
+        workspace_tabs(&api_socket, &source_id),
+        workspace_tabs(&api_socket, &destination_id),
+        screen_text(&output),
+    );
+    assert!(
+        wait_until(Duration::from_secs(6), Duration::from_millis(25), || {
+            !workspace_ids(&api_socket).contains(&source_id)
+        }),
+        "the emptied source workspace must close; workspaces={:?}",
+        workspace_ids(&api_socket),
+    );
+
+    drop(input);
+    drop(server);
+    cleanup_spawned_herdr(client, base);
+}

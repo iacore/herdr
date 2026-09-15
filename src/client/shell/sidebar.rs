@@ -298,9 +298,11 @@ pub(crate) fn render_sidebar(
             target.matches(state.active_endpoint_id, &workspace.workspace_id)
         });
         let dragged = state.dragged_workspace_id == Some(workspace.workspace_id.as_str());
+        let tab_destination =
+            state.tab_drag_destination_workspace_id == Some(workspace.workspace_id.as_str());
         if selected {
             buffer.set_style(rect, Style::default().bg(palette.selection_bg));
-        } else if dragged {
+        } else if dragged || tab_destination {
             buffer.set_style(rect, Style::default().bg(palette.surface1));
         } else if workspace.focused {
             buffer.set_style(rect, Style::default().bg(palette.active_row_bg));
@@ -315,7 +317,7 @@ pub(crate) fn render_sidebar(
             rows,
             true,
             selected,
-            dragged,
+            dragged || tab_destination,
             palette,
         );
         let group_toggle = render_parent_group_toggle(

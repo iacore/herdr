@@ -243,6 +243,8 @@ pub(super) struct ShellRenderState<'a> {
     pub(super) sidebar_collapsed: bool,
     pub(super) sidebar_section_split: f32,
     pub(super) tab_drag_insert_index: Option<usize>,
+    /// Workspace row highlighted while a tab is dragged over it.
+    pub(super) tab_drag_destination_workspace_id: Option<&'a str>,
     pub(super) selected_workspace_id: Option<&'a WorkspaceNavigationTarget>,
     pub(super) reveal_navigation_workspace: &'a mut bool,
     pub(super) dragged_workspace_id: Option<&'a str>,

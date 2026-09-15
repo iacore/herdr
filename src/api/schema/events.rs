@@ -485,6 +485,13 @@ pub enum EventData {
         workspace_id: String,
         insert_index: usize,
         tabs: Vec<TabInfo>,
+        /// Set when the tab left another workspace.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous_tab_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous_workspace_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous_tabs: Option<Vec<TabInfo>>,
     },
     TabFocused {
         tab_id: String,

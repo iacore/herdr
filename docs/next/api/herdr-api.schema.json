@@ -397,6 +397,28 @@
                   "minimum": 0,
                   "type": "integer"
                 },
+                "previous_tab_id": {
+                  "description": "Set when the tab left another workspace.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "previous_tabs": {
+                  "items": {
+                    "$ref": "#/schemas/event/$defs/TabInfo"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "previous_workspace_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "tab_id": {
                   "type": "string"
                 },
@@ -4397,6 +4419,29 @@
           ],
           "type": "object"
         },
+        "TabMoveToWorkspaceParams": {
+          "description": "Move a tab out of its workspace, keeping its panes, layout, and processes.",
+          "properties": {
+            "insert_index": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "tab_id": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "description": "Destination workspace.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "tab_id",
+            "workspace_id",
+            "insert_index"
+          ],
+          "type": "object"
+        },
         "TabRenameParams": {
           "properties": {
             "label": {
@@ -5267,6 +5312,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/TabMoveParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "tab.move_to_workspace",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/TabMoveToWorkspaceParams"
             }
           },
           "required": [
@@ -7182,6 +7243,28 @@
                   "format": "uint",
                   "minimum": 0,
                   "type": "integer"
+                },
+                "previous_tab_id": {
+                  "description": "Set when the tab left another workspace.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "previous_tabs": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/TabInfo"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "previous_workspace_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "tab_id": {
                   "type": "string"
